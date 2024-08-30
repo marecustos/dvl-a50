@@ -121,7 +121,7 @@ class DVL_A50(Node):
             self.current_altitude = float(data["altitude"])
             theDVL.velocity_valid = data["velocity_valid"]
             
-            if self.current_altitude >= 0.0 && theDVL.velocity_valid:
+            if self.current_altitude >= 0.0 and theDVL.velocity_valid:
                 theDVL.altitude = self.current_altitude
                 self.old_altitude = self.current_altitude
             else:
