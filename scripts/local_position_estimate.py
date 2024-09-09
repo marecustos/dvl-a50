@@ -21,7 +21,7 @@ class DVLPositionSubscriber(Node):
     try:
         real_path = os.readlink(self.symbolic_link)
         print(f"real path {os.path.join('/dev', real_path)}")
-        return os.path.join('/dev', real_path)
+        return increment_device_number(os.path.join('/dev', real_path))
     except OSError as e:
         print(f"Error reading symbolic link: {e}")
         return None
@@ -31,6 +31,19 @@ class DVLPositionSubscriber(Node):
         connection = mavutil.mavlink_connection(real_device_path, baud=115200)
 
         return connection
+
+    def increment_device_number(self, device_path):
+    """Increment the device number in the device path."""
+    # Match the pattern for the device (e.g., /dev/ttyACM0)
+    match = re.match(r'^(.+?)(\d+)$', device_path)
+    if match:
+        base_path = match.group(1)
+        number = int(match.group(2))
+        new_number = number + 1
+        return f"{base_path}{new_number}"
+    else:
+        print("Device path does not match expected pattern.")
+        return None
 
     def listener_callback(self, msg: DVLDR):
         timestamp = self.get_clock().now().nanoseconds / 1e9
