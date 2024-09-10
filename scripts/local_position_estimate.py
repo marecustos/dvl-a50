@@ -1,4 +1,7 @@
+#!/usr/bin/env python3
+
 import rclpy
+import os
 from rclpy.node import Node
 from pymavlink import mavutil
 from dvl_msgs.msg import DVLDR
@@ -13,37 +16,37 @@ class DVLPositionSubscriber(Node):
             10
         )
         self.symbolic_link = '/dev/pixhawk'
-        self.real_device_path = self.get_real_device_path(self.symbolic_link)
-        self.master_tx = self.create_mavlink_connection(self.real_device_path)
+        self.real_device_path = self.get_real_device_path()
+        self.master_tx = self.create_mavlink_connection()
 
     def get_real_device_path(self):
-    """Get the real path of a symbolic link."""
-    try:
-        real_path = os.readlink(self.symbolic_link)
-        print(f"real path {os.path.join('/dev', real_path)}")
-        return increment_device_number(os.path.join('/dev', real_path))
-    except OSError as e:
-        print(f"Error reading symbolic link: {e}")
-        return None
+        """Get the real path of a symbolic link."""
+        try:
+            real_path = os.readlink(self.symbolic_link)
+            print(f"real path {os.path.join('/dev', real_path)}")
+            return increment_device_number(os.path.join('/dev', real_path))
+        except OSError as e:
+            print(f"Error reading symbolic link: {e}")
+            return None
 
-    def create_mavlink_connection(self,real_device_path):
+    def create_mavlink_connection(self):
         """Create a MAVLink connection using the base path and its incremented version."""
-        connection = mavutil.mavlink_connection(real_device_path, baud=115200)
+        connection = mavutil.mavlink_connection(self.real_device_path, baud=115200)
 
         return connection
 
     def increment_device_number(self, device_path):
-    """Increment the device number in the device path."""
-    # Match the pattern for the device (e.g., /dev/ttyACM0)
-    match = re.match(r'^(.+?)(\d+)$', device_path)
-    if match:
-        base_path = match.group(1)
-        number = int(match.group(2))
-        new_number = number + 1
-        return f"{base_path}{new_number}"
-    else:
-        print("Device path does not match expected pattern.")
-        return None
+        """Increment the device number in the device path."""
+        # Match the pattern for the device (e.g., /dev/ttyACM0)
+        match = re.match(r'^(.+?)(\d+)$', device_path)
+        if match:
+            base_path = match.group(1)
+            number = int(match.group(2))
+            new_number = number + 1
+            return f"{base_path}{new_number}"
+        else:
+            print("Device path does not match expected pattern.")
+            return None
 
     def listener_callback(self, msg: DVLDR):
         timestamp = self.get_clock().now().nanoseconds / 1e9
