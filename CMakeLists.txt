@@ -77,7 +77,7 @@ install(TARGETS
 install(PROGRAMS
   scripts/dvl_a50.py
   scripts/local_position_estimate.py
-  scripts/moc_gps.py
+  scripts/global_position_estimator.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

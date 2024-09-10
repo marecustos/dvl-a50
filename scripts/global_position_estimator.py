@@ -1,20 +1,30 @@
 #!/usr/bin/env python3
 
 import rclpy
-from rclpy.node import Node
-from pymavlink import mavutil
 import os
 import re
 import math
 import time
+from rclpy.node import Node
+from pymavlink import mavutil
+from dvl_msgs.msg import DVLDR
 
-class GPSDataSender(Node):
+class DVLPositionSubscriberGPSDataSender(Node):
     def __init__(self):
-        super().__init__('gps_data_sender')
+        super().__init__('dvl_position_subscriber_gps_data_sender')
 
+        # MAVLink connections
         self.symbolic_link = '/dev/pixhawk'
         self.real_device_path = self.get_real_device_path(self.symbolic_link)
-        self.master_rx = self.create_mavlink_connection(self.real_device_path)
+        self.master_comm = self.create_mavlink_connection(self.real_device_path)
+
+        # DVL position subscriber
+        self.subscription = self.create_subscription(
+            DVLDR,
+            '/dvl/position',
+            self.listener_callback,
+            10
+        )
 
         # Timer to periodically check for LOCAL_POSITION_NED messages
         self.timer = self.create_timer(0.1, self.check_local_position_ned)
@@ -35,7 +45,7 @@ class GPSDataSender(Node):
         try:
             real_path = os.readlink(symbolic_link)
             self.get_logger().info(f"real path {os.path.join('/dev', real_path)}")
-            return self.increment_device_number(os.path.join('/dev', real_path))
+            return self.decrement_device_number(os.path.join('/dev', real_path))
         except OSError as e:
             self.get_logger().error(f"Error reading symbolic link: {e}")
             return None
@@ -47,21 +57,34 @@ class GPSDataSender(Node):
         self.get_logger().info("Connected to Pixhawk")
         return connection
 
-    def increment_device_number(self, device_path):
+    def decrement_device_number(self, device_path):
         """Increment the device number in the device path."""
         match = re.match(r'^(.+?)(\d+)$', device_path)
         if match:
             base_path = match.group(1)
             number = int(match.group(2))
-            new_number = number + 1
+            new_number = number - 1
             return f"{base_path}{new_number}"
         else:
             self.get_logger().error("Device path does not match expected pattern.")
             return None
 
+    def listener_callback(self, msg: DVLDR):
+        """Send VISION_POSITION_ESTIMATE to Pixhawk."""
+        timestamp = self.get_clock().now().nanoseconds / 1e9
+        self.master_comm.mav.vision_position_estimate_send(
+            int(timestamp * 1e6),  # Timestamp in microseconds
+            msg.position.x,         # X position
+            msg.position.y,         # Y position
+            msg.position.z,         # Z position
+            msg.roll,               # Roll
+            msg.pitch,              # Pitch
+            msg.yaw                 # Yaw
+        )
+
     def check_local_position_ned(self):
         """Check for LOCAL_POSITION_NED messages and use them to mock GPS data."""
-        msg = self.master_rx.recv_match(type='LOCAL_POSITION_NED', blocking=False)
+        msg = self.master_comm.recv_match(type='LOCAL_POSITION_NED', blocking=False)
         if msg:
             # Extract x, y, z position values
             local_x = msg.x
@@ -105,15 +128,15 @@ class GPSDataSender(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    gps_data_sender = GPSDataSender()
+    node = DVLPositionSubscriberGPSDataSender()
 
     try:
-        rclpy.spin(gps_data_sender)
+        rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        gps_data_sender.get_logger().info("Shutting down...")
-        gps_data_sender.destroy_node()
+        node.get_logger().info("Shutting down...")
+        node.destroy_node()
         rclpy.shutdown()
 
 if __name__ == '__main__':
