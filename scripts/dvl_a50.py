@@ -31,7 +31,7 @@ class DVL_A50(Node):
     #Constructor
     def __init__(self):
         super().__init__('dvl_a50_node')
-        self.declare_parameter('ip_address', '192.168.194.95')
+        self.declare_parameter('ip_address', '192.168.1.95')
         self.my_param = self.get_parameter('ip_address').get_parameter_value().string_value
         self.get_logger().info('IP_ADDRESS: %s' % self.my_param)
         self.dvl_publisher_ = self.create_publisher(DVL, '/dvl/data', 10)
