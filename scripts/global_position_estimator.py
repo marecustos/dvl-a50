@@ -16,7 +16,10 @@ class DVLPositionSubscriberGPSDataSender(Node):
         # MAVLink connections
         self.symbolic_link = '/dev/pixhawk'
         self.real_device_path = self.get_real_device_path(self.symbolic_link)
-        self.master_comm = self.create_mavlink_connection(self.real_device_path)
+        self.device_candidates = self.get_device_candidates(self.real_device_path)
+
+        #think about replacing this communication master by the companion_rx in the buttom , it should works but it still needs to be tested
+        self.master_comm = self.create_mavlink_connection(self.device_candidates)
 
         # DVL position subscriber
         self.subscription = self.create_subscription(
@@ -38,7 +41,8 @@ class DVLPositionSubscriberGPSDataSender(Node):
         self.epv = 300  # Vertical dilution of precision
 
         # MAVLink connection to QGroundControl (or similar)
-        self.qgc_tx = mavutil.mavlink_connection('udpout:localhost:14550', dialect="ardupilotmega", source_component=1, source_system=1)
+        self.qgc_tx = mavutil.mavlink_connection('udpout:base-station.local:14550', dialect="ardupilotmega", source_component=1, source_system=1)
+        self.companion_rx = mavutil.mavlink_connection('udp:seabot-companion.local:14550')
 
     def get_real_device_path(self, symbolic_link):
         """Get the real path of a symbolic link."""
@@ -50,12 +54,40 @@ class DVLPositionSubscriberGPSDataSender(Node):
             self.get_logger().error(f"Error reading symbolic link: {e}")
             return None
 
-    def create_mavlink_connection(self, real_device_path):
-        """Create a MAVLink connection using the base path and its incremented version."""
-        connection = mavutil.mavlink_connection(real_device_path, baud=115200)
-        connection.wait_heartbeat()
-        self.get_logger().info("Connected to Pixhawk")
-        return connection
+    def get_device_candidates(self,real_device_path):
+        """Generate a list of device paths around the real path of /dev/pixhawk."""
+        match = re.match(r'^(.+?)(\d+)$', real_device_path)
+        if match:
+            base_path = match.group(1)
+            number = int(match.group(2))
+            # Create a list with current device, number-1, and number+1
+            return [f"{base_path}{number-1}", f"{base_path}{number}", f"{base_path}{number+1}"]
+        return []
+
+    def is_pixhawk_device(self,device_path):
+        """Check if the given device is Pixhawk by waiting for a MAVLink heartbeat."""
+        try:
+            connection = mavutil.mavlink_connection(device_path, baud=115200)
+            connection.wait_heartbeat(timeout=5)
+            print(f"Found Pixhawk on {device_path}")
+            return True
+        except Exception as e:
+            print(f"Device {device_path} is not Pixhawk. Error: {e}")
+            return False
+
+    def create_mavlink_connection(self,device_candidates):
+        """Attempt to create a MAVLink connection using a list of device candidates."""
+        for device_path in device_candidates:
+            if self.is_pixhawk_device(device_path):
+                try:
+                    connection = mavutil.mavlink_connection(device_path, baud=115200)
+                    connection.wait_heartbeat()
+                    print(f"Connected to Pixhawk on {device_path}")
+                    return connection
+                except Exception as e:
+                    print(f"Failed to connect to {device_path}. Error: {e}")
+        print("Could not establish a connection to any Pixhawk device.")
+        return None
 
     def decrement_device_number(self, device_path):
         """Increment the device number in the device path."""
@@ -84,7 +116,7 @@ class DVLPositionSubscriberGPSDataSender(Node):
 
     def check_local_position_ned(self):
         """Check for LOCAL_POSITION_NED messages and use them to mock GPS data."""
-        msg = self.master_comm.recv_match(type='LOCAL_POSITION_NED', blocking=False)
+        msg = self.companion_rx.recv_match(type='LOCAL_POSITION_NED', blocking=False)
         if msg:
             # Extract x, y, z position values
             local_x = msg.x
